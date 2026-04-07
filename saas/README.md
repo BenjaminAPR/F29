@@ -40,7 +40,8 @@ npm run dev
 - **Vercel / sin GCP**: `NEXT_PUBLIC_SUPABASE_*` + `GEMINI_API_KEY` (Vertex en Vercel requiere service account vía JSON y `GOOGLE_APPLICATION_CREDENTIALS`, más engorroso).
 - **Cloud Run (recomendado con Vertex)**: imagen Docker (`saas/Dockerfile`, salida `standalone`). En runtime: `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `NEXT_PUBLIC_SUPABASE_*`. La cuenta de servicio **del servicio Cloud Run** necesita **Vertex AI User** (`roles/aiplatform.user`).
 
-**GCP desde cero (proyecto, APIs, IAM, secretos, Supabase):** [docs/GCP_SETUP.md](./docs/GCP_SETUP.md).
+**GCP desde cero (proyecto, APIs, IAM, secretos, Supabase):** [docs/GCP_SETUP.md](./docs/GCP_SETUP.md).  
+*Última verificación de pipeline: 2026-04-02.*
 
 ### GitHub → Cloud Run (recomendado: Cloud Build en GCP)
 
