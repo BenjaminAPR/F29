@@ -1,0 +1,55 @@
+# Dispara el mismo pipeline que cloudbuild.yaml en cada push a main.
+# Úsalo si el "activador" de Cloud Build en la consola de GCP no está conectado al repo.
+#
+# Secreto obligatorio en GitHub → Settings → Secrets → Actions:
+#   GCP_SA_KEY = JSON de una cuenta de servicio con al menos:
+#     - roles/cloudbuild.builds.editor (o Editor del proyecto en dev)
+#   La cuenta por defecto de Cloud Build (…@cloudbuild.gserviceaccount.com) sigue
+#   ejecutando los pasos docker/push/deploy (necesita AR Writer + Run Admin, etc.).
+#
+# Opcional (recomendado): los mismos valores que en el activador GCP:
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+name: Cloud Build (submit)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "saas/**"
+      - "cloudbuild.yaml"
+      - ".github/workflows/cloud-build-submit.yml"
+
+concurrency:
+  group: cloud-build-submit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: gcloud builds submit
+        env:
+          SUPA_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPA_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          set -e
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          # Valores vacíos si no definiste secretos en GitHub (el build puede fallar en Next sin Supabase).
+          URL="${SUPA_URL:-}"
+          KEY="${SUPA_KEY:-}"
+          gcloud builds submit . \
+            --config cloudbuild.yaml \
+            --substitutions=SHORT_SHA="${SHORT}",_NEXT_PUBLIC_SUPABASE_URL="${URL}",_NEXT_PUBLIC_SUPABASE_ANON_KEY="${KEY}"
