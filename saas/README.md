@@ -42,30 +42,13 @@ npm run dev
 
 **GCP desde cero (proyecto, APIs, IAM, secretos, Supabase):** [docs/GCP_SETUP.md](./docs/GCP_SETUP.md).
 
-### GitHub → Cloud Run (push a `main`)
+### GitHub → Cloud Run (recomendado: Cloud Build en GCP)
 
-En la raíz del monorepo está [`.github/workflows/deploy-cloud-run.yml`](../.github/workflows/deploy-cloud-run.yml): al pushear a `main` (cambios bajo `saas/`) construye la imagen, la sube a **GitHub Container Registry (`ghcr.io`)** — sin **Artifact Registry** en GCP — y ejecuta `gcloud run deploy`.
+No usamos GitHub Actions con `GCP_SA_KEY`: el **activador de Cloud Build** enlaza tu repo y ejecuta el **`cloudbuild.yaml`** de la raíz (build del `Dockerfile` en `saas/`).
 
-1. Habilitá en GCP las APIs **Cloud Run** y **Vertex AI** (y las que indica [docs/GCP_SETUP.md](./docs/GCP_SETUP.md)); **no** hace falta Artifact Registry para este flujo.
-
-2. Cuenta de servicio para GitHub (JSON) con roles: **Cloud Run Admin** y **Service Account User** (ya no hace falta Artifact Registry Writer).
-
-3. Tras el **primer** push que publique el paquete Docker: en GitHub → **Packages** → `f29-saas` → **Package settings** → visibilidad **Public** (si no, Cloud Run no puede bajar la imagen sin credenciales extra).
-
-4. En **Settings → Secrets → Actions**:
-
-   | Secreto | Contenido |
-   |--------|-----------|
-   | `GCP_PROJECT_ID` | ID del proyecto GCP |
-   | `GCP_REGION` | Región (ej. `us-central1`) |
-   | `GCP_CLOUD_RUN_SERVICE` | Nombre del servicio (ej. `f29-saas`) |
-   | `GCP_SA_KEY` | JSON de la cuenta de servicio |
-   | `NEXT_PUBLIC_SUPABASE_URL` | URL pública Supabase |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key |
-
-5. Push a `main`.
-
-Si tu repositorio Git es **solo** el contenido de `saas/` (sin carpeta padre), mové `.github/workflows/deploy-cloud-run.yml` dentro de ese repo, quitá `working-directory: saas` y los paths `saas/**` (o cambiá a raíz del repo).
+1. Pasos y permisos: [docs/GCP_SETUP.md](./docs/GCP_SETUP.md).
+2. En el **activador**, definí sustituciones `_NEXT_PUBLIC_SUPABASE_URL` y `_NEXT_PUBLIC_SUPABASE_ANON_KEY` (no van como secretos de GitHub Actions para este flujo).
+3. Cada push a la rama configurada compila y despliega; el historial está en **Cloud Build**.
 
 ## Seguridad
 
