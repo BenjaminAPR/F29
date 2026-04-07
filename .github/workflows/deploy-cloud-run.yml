@@ -1,15 +1,14 @@
 # Despliegue automático a Google Cloud Run al hacer push a main.
 #
-# Requisitos previos (una vez en GCP):
-# 1) Artifact Registry: repositorio Docker (mismo nombre que GCP_ARTIFACT_REGISTRY).
-# 2) Cuenta de servicio para GitHub (JSON) con al menos:
-#    - roles/run.admin
-#    - roles/artifactregistry.writer
-#    - roles/iam.serviceAccountUser
-# 3) En GitHub → Settings → Secrets → Actions, definir los secretos listados abajo.
+# La imagen se publica en GitHub Container Registry (ghcr.io) — sin Artifact Registry en GCP.
 #
-# Si tu repositorio es solo la carpeta saas (sin padre F29), mové este archivo a
-# saas/.github/workflows/ y quitá working-directory / prefijo saas en las rutas.
+# Requisitos en GCP:
+# - Cuenta de servicio (JSON) con: roles/run.admin, roles/iam.serviceAccountUser
+#   (ya NO hace falta artifactregistry.writer).
+# - Paquete ghcr.io **público** (o configurar credenciales de pull en Cloud Run para privado).
+#
+# Secretos GitHub: GCP_PROJECT_ID, GCP_REGION, GCP_CLOUD_RUN_SERVICE, GCP_SA_KEY,
+# NEXT_PUBLIC_SUPABASE_*
 
 name: Deploy Cloud Run
 
@@ -29,16 +28,23 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
   SERVICE: ${{ secrets.GCP_CLOUD_RUN_SERVICE }}
-  AR_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -50,16 +56,14 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
-
       - name: Build and push container image
         working-directory: saas
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}"
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${OWNER_LC}/f29-saas:${{ github.sha }}"
           docker build \
             --build-arg NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \

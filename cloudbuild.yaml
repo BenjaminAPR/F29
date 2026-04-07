@@ -1,0 +1,34 @@
+# Cloud Build: imagen Next.js desde monorepo (Dockerfile en saas/).
+# El trigger de GitHub → Cloud Run debe usar este archivo (raíz del repo).
+#
+# En Cloud Build → Activadores → tu trigger → Variables de sustitución, definí:
+#   _NEXT_PUBLIC_SUPABASE_URL   = tu URL Supabase
+#   _NEXT_PUBLIC_SUPABASE_ANON_KEY = anon key
+#
+# Ajustá _REGION si tu servicio Cloud Run no está en southamerica-west1.
+
+substitutions:
+  _REGION: southamerica-west1
+  _SERVICE_NAME: f29
+  _NEXT_PUBLIC_SUPABASE_URL: ""
+  _NEXT_PUBLIC_SUPABASE_ANON_KEY: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "--build-arg"
+      - "NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "-f"
+      - "saas/Dockerfile"
+      - "saas"
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:${SHORT_SHA}"

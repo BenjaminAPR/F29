@@ -40,31 +40,30 @@ npm run dev
 - **Vercel / sin GCP**: `NEXT_PUBLIC_SUPABASE_*` + `GEMINI_API_KEY` (Vertex en Vercel requiere service account vía JSON y `GOOGLE_APPLICATION_CREDENTIALS`, más engorroso).
 - **Cloud Run (recomendado con Vertex)**: imagen Docker (`saas/Dockerfile`, salida `standalone`). En runtime: `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `NEXT_PUBLIC_SUPABASE_*`. La cuenta de servicio **del servicio Cloud Run** necesita **Vertex AI User** (`roles/aiplatform.user`).
 
+**GCP desde cero (proyecto, APIs, IAM, secretos, Supabase):** [docs/GCP_SETUP.md](./docs/GCP_SETUP.md).
+
 ### GitHub → Cloud Run (push a `main`)
 
-En la raíz del monorepo está [`.github/workflows/deploy-cloud-run.yml`](../.github/workflows/deploy-cloud-run.yml): al pushear a `main` (con cambios bajo `saas/`) construye la imagen, la sube a **Artifact Registry** y ejecuta `gcloud run deploy`.
+En la raíz del monorepo está [`.github/workflows/deploy-cloud-run.yml`](../.github/workflows/deploy-cloud-run.yml): al pushear a `main` (cambios bajo `saas/`) construye la imagen, la sube a **GitHub Container Registry (`ghcr.io`)** — sin **Artifact Registry** en GCP — y ejecuta `gcloud run deploy`.
 
-1. En GCP, creá un repositorio Docker en Artifact Registry (misma región que usarás en el workflow), por ejemplo:
+1. Habilitá en GCP las APIs **Cloud Run** y **Vertex AI** (y las que indica [docs/GCP_SETUP.md](./docs/GCP_SETUP.md)); **no** hace falta Artifact Registry para este flujo.
 
-   `gcloud artifacts repositories create NOMBRE_REPO --repository-format=docker --location=REGION --description=F29`
+2. Cuenta de servicio para GitHub (JSON) con roles: **Cloud Run Admin** y **Service Account User** (ya no hace falta Artifact Registry Writer).
 
-2. Habilitá APIs: *Cloud Run*, *Artifact Registry* (y *Vertex AI* si extraés PDF).
+3. Tras el **primer** push que publique el paquete Docker: en GitHub → **Packages** → `f29-saas` → **Package settings** → visibilidad **Public** (si no, Cloud Run no puede bajar la imagen sin credenciales extra).
 
-3. Cuenta de servicio para GitHub (JSON) con roles: **Cloud Run Admin**, **Artifact Registry Writer**, **Service Account User** (sobre la cuenta de servicio que ejecuta Cloud Run, si no es la predeterminada).
-
-4. En el repo de GitHub: **Settings → Secrets and variables → Actions**, cargá:
+4. En **Settings → Secrets → Actions**:
 
    | Secreto | Contenido |
    |--------|-----------|
    | `GCP_PROJECT_ID` | ID del proyecto GCP |
    | `GCP_REGION` | Región (ej. `us-central1`) |
    | `GCP_CLOUD_RUN_SERVICE` | Nombre del servicio (ej. `f29-saas`) |
-   | `GCP_ARTIFACT_REGISTRY` | Nombre del repo Docker en Artifact Registry |
-   | `GCP_SA_KEY` | JSON completo de la cuenta de servicio |
+   | `GCP_SA_KEY` | JSON de la cuenta de servicio |
    | `NEXT_PUBLIC_SUPABASE_URL` | URL pública Supabase |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key (se inyecta en el build y en el deploy) |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key |
 
-5. Conectá el repo a GitHub y hacé push a `main`.
+5. Push a `main`.
 
 Si tu repositorio Git es **solo** el contenido de `saas/` (sin carpeta padre), mové `.github/workflows/deploy-cloud-run.yml` dentro de ese repo, quitá `working-directory: saas` y los paths `saas/**` (o cambiá a raíz del repo).
 
