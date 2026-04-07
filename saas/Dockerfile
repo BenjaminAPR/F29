@@ -33,8 +33,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
-EXPOSE 3000
-ENV PORT=3000
+# Cloud Run inyecta PORT (típicamente 8080); el default evita 3000 si algo no inyecta.
+EXPOSE 8080
+ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
 
 CMD ["node", "server.js"]

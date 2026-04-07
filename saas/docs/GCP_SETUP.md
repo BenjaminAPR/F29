@@ -91,7 +91,7 @@ Sin esos valores el build de Next no tendrá Supabase en el cliente.
 | Cuenta | Rol |
 |--------|-----|
 | **Default compute** (`PROJECT_NUMBER-compute@…`) | **Vertex AI User** (llamadas Gemini desde Cloud Run). |
-| **Cloud Build** (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) | **Artifact Registry Writer** (publicar imagen). |
+| **Cloud Build** (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) | **Artifact Registry Writer** + **Cloud Run Admin** + **Service Account User** (sobre la cuenta de ejecución de Cloud Run, si el deploy lo pide). Sin **Cloud Run Admin**, el paso `gcloud run deploy` del `cloudbuild.yaml` falla. |
 
 **No** necesitás una cuenta `github-actions-deploy` ni secreto `GCP_SA_KEY` en GitHub para este flujo.
 

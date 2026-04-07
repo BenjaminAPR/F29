@@ -1,11 +1,11 @@
-# Cloud Build: imagen Next.js desde monorepo (Dockerfile en saas/).
-# El trigger de GitHub → Cloud Run debe usar este archivo (raíz del repo).
+# Cloud Build: build → push → deploy Cloud Run (monorepo, Dockerfile en saas/).
 #
-# En Cloud Build → Activadores → tu trigger → Variables de sustitución, definí:
-#   _NEXT_PUBLIC_SUPABASE_URL   = tu URL Supabase
-#   _NEXT_PUBLIC_SUPABASE_ANON_KEY = anon key
+# Activador: config desde repositorio = /cloudbuild.yaml
+# Sustituciones OBLIGATORIAS en el activador:
+#   _NEXT_PUBLIC_SUPABASE_URL
+#   _NEXT_PUBLIC_SUPABASE_ANON_KEY
 #
-# Ajustá _REGION si tu servicio Cloud Run no está en southamerica-west1.
+# Ajustá en sustituciones si aplica: _REGION, _SERVICE_NAME
 
 substitutions:
   _REGION: southamerica-west1
@@ -17,9 +17,10 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  - name: "gcr.io/cloud-builders/docker"
+  - id: build
+    name: gcr.io/cloud-builders/docker
     args:
-      - "build"
+      - build
       - "--build-arg"
       - "NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}"
       - "--build-arg"
@@ -30,5 +31,28 @@ steps:
       - "saas/Dockerfile"
       - "saas"
 
-images:
-  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:${SHORT_SHA}"
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:${SHORT_SHA}"
+    waitFor:
+      - build
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - "${_SERVICE_NAME}"
+      - "--region=${_REGION}"
+      - "--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=8080"
+      - >-
+        --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,VERTEX_LOCATION=${_REGION},NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL},NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - "--quiet"
+    waitFor:
+      - push
