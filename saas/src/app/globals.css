@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/*
+  Tema claro fijo para la app (contabilidad / uso diario).
+  Evita que prefers-color-scheme: dark pinte el body negro con textos oscuros encima.
+*/
+:root {
+  color-scheme: light;
+  --app-bg: #f1f5f9;
+  --app-surface: #ffffff;
+  --app-border: rgba(15, 23, 42, 0.08);
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background-color: rgb(224 242 254);
+  color: rgb(12 74 110);
+}
+
+/* Inputs y selects coherentes en todos los navegadores */
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='month'],
+select {
+  background-color: var(--app-surface);
+}

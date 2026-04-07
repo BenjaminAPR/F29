@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+.env*
+!.env.local.example
+coverage
+npm-debug.log*
+Dockerfile*
+.husky
+.vscode
+.cursor
