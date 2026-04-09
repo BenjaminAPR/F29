@@ -93,16 +93,6 @@ Sin esos valores el build de Next no tendrá Supabase en el cliente.
 | **Default compute** (`PROJECT_NUMBER-compute@…`) | **Vertex AI User** (llamadas Gemini desde Cloud Run). |
 | **Cloud Build** (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) | **Artifact Registry Writer** + **Cloud Run Admin** + **Service Account User** (sobre la cuenta de ejecución de Cloud Run, si el deploy lo pide). Sin **Cloud Run Admin**, el paso `gcloud run deploy` del `cloudbuild.yaml` falla. |
 
-### Si el push no dispara nada (activador mal conectado)
-
-Podés **no** depender del activador en GCP: el repo incluye [`.github/workflows/cloud-build-submit.yml`](../../.github/workflows/cloud-build-submit.yml), que en cada push a `main` ejecuta `gcloud builds submit` con el mismo `cloudbuild.yaml`.
-
-1. Creá una cuenta de servicio (o reutilizá una) con rol **Editor de Cloud Build** (`roles/cloudbuild.builds.editor`) como mínimo para poder **encolar** el build.
-2. En GitHub → **Secrets → Actions**, agregá **`GCP_SA_KEY`** (JSON de esa cuenta).
-3. Recomendado: secretos **`NEXT_PUBLIC_SUPABASE_URL`** y **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** (mismos valores que usarías en sustituciones del activador).
-
-Los pasos **docker / push / deploy** del `cloudbuild.yaml` los sigue ejecutando la cuenta **`…@cloudbuild.gserviceaccount.com`** (con AR Writer, Run Admin, etc., como arriba).
-
 ---
 
 ## 4. Cloud Run: tráfico y entorno
