@@ -38,6 +38,7 @@ create table if not exists public.documents (
   source_type text not null check (source_type in ('CSV', 'PDF')),
   review_status text not null default 'validated'
     check (review_status in ('pending', 'validated', 'excluded')),
+  dedup_key text not null,
   review_note text,
   metadata_json jsonb not null default '{}'::jsonb,
   created_by uuid not null references auth.users (id) on delete cascade,
@@ -48,11 +49,119 @@ create table if not exists public.documents (
 create index if not exists documents_company_id_idx on public.documents (company_id);
 create index if not exists documents_created_by_idx on public.documents (created_by);
 create index if not exists documents_company_period_idx on public.documents (company_id, period desc);
+create index if not exists documents_company_period_dedup_idx on public.documents (company_id, period desc, dedup_key);
+
+-- Catálogo versionado F29 (oficial) + mapeo tipo_doc → línea/casilla
+create table if not exists public.f29_official_versions (
+  id text primary key,
+  label text not null,
+  effective_from date not null,
+  effective_to date,
+  source_url text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.f29_official_lines (
+  version_id text not null references public.f29_official_versions (id) on delete cascade,
+  line_code text not null,
+  title text not null,
+  practitioner_note text,
+  sort_order int not null default 0,
+  primary key (version_id, line_code)
+);
+
+create table if not exists public.f29_line_map (
+  version_id text not null references public.f29_official_versions (id) on delete cascade,
+  tipo_doc text not null,
+  line_code text not null,
+  sign int not null default 1 check (sign in (-1, 1)),
+  include_neto boolean not null default true,
+  include_iva boolean not null default true,
+  include_total boolean not null default true,
+  primary key (version_id, tipo_doc, line_code),
+  constraint f29_line_map_line_fk
+    foreign key (version_id, line_code)
+    references public.f29_official_lines (version_id, line_code)
+    on delete cascade
+);
+
+create index if not exists f29_line_map_version_tipo_idx
+  on public.f29_line_map (version_id, tipo_doc);
+
+insert into public.f29_official_versions (id, label, effective_from, source_url)
+values ('2026-01-cl', 'Chile F29 (seed) 2026-01', date '2026-01-01', null)
+on conflict (id) do nothing;
+
+insert into public.f29_official_lines (version_id, line_code, title, practitioner_note, sort_order)
+values
+  ('2026-01-cl', 'compras_afectas_credito', 'Compras afectas (crédito fiscal)', 'Incluye compras con IVA recuperable (p. ej. 33, 46). Ver instructivo vigente.', 10),
+  ('2026-01-cl', 'compras_exentas', 'Compras exentas/no afectas', 'Operaciones exentas/no afectas (p. ej. 34, 41). Ver instructivo vigente.', 20),
+  ('2026-01-cl', 'nc_compras', 'Notas de crédito (compras)', 'DTE 61 y ajustes a crédito fiscal según corresponda.', 30),
+  ('2026-01-cl', 'nd_compras', 'Notas de débito (compras)', 'DTE 56 y ajustes según corresponda.', 40),
+  ('2026-01-cl', 'otros', 'Otros / revisión manual', 'Casos no mapeados automáticamente.', 90)
+on conflict (version_id, line_code) do nothing;
+
+insert into public.f29_line_map (version_id, tipo_doc, line_code, sign, include_neto, include_iva, include_total)
+values
+  ('2026-01-cl', '33', 'compras_afectas_credito', 1, true, true, true),
+  ('2026-01-cl', '46', 'compras_afectas_credito', 1, true, true, true),
+  ('2026-01-cl', '34', 'compras_exentas', 1, true, false, true),
+  ('2026-01-cl', '41', 'compras_exentas', 1, true, false, true),
+  ('2026-01-cl', '61', 'nc_compras', -1, true, true, true),
+  ('2026-01-cl', '56', 'nd_compras', 1, true, true, true)
+on conflict (version_id, tipo_doc, line_code) do nothing;
+
+-- Importaciones RCV (SII): batches + filas normalizadas para conciliación.
+create table if not exists public.rcv_import_batches (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  period text not null default to_char(current_date, 'YYYY-MM'),
+  filename text,
+  source_type text not null default 'CSV' check (source_type in ('CSV')),
+  warnings jsonb not null default '[]'::jsonb,
+  skipped_lines int not null default 0,
+  imported_rows int not null default 0,
+  created_by uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint rcv_batches_period_format_chk check (period ~ '^\d{4}-(0[1-9]|1[0-2])$')
+);
+
+create index if not exists rcv_batches_company_period_idx
+  on public.rcv_import_batches (company_id, period desc, created_at desc);
+create index if not exists rcv_batches_created_by_idx
+  on public.rcv_import_batches (created_by);
+
+create table if not exists public.rcv_rows (
+  id uuid primary key default gen_random_uuid(),
+  batch_id uuid not null references public.rcv_import_batches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  period text not null,
+  tipo_doc text not null,
+  rut_emisor text,
+  folio text,
+  monto_neto bigint not null default 0,
+  iva bigint not null default 0,
+  total bigint not null default 0,
+  fecha date,
+  dedup_key text not null,
+  raw_json jsonb not null default '{}'::jsonb,
+  created_by uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint rcv_rows_period_format_chk check (period ~ '^\d{4}-(0[1-9]|1[0-2])$')
+);
+
+create index if not exists rcv_rows_batch_idx on public.rcv_rows (batch_id);
+create index if not exists rcv_rows_company_period_idx
+  on public.rcv_rows (company_id, period desc, created_at desc);
+create index if not exists rcv_rows_created_by_idx on public.rcv_rows (created_by);
+create index if not exists rcv_rows_dedup_key_idx on public.rcv_rows (company_id, period, dedup_key);
 
 -- RLS
 alter table public.profiles enable row level security;
 alter table public.companies enable row level security;
 alter table public.documents enable row level security;
+alter table public.rcv_import_batches enable row level security;
+alter table public.rcv_rows enable row level security;
 
 -- profiles: cada usuario solo ve/edita su fila
 drop policy if exists "profiles_select_own" on public.profiles;
@@ -125,6 +234,64 @@ for delete using (
   exists (
     select 1 from public.companies c
     where c.id = documents.company_id and c.created_by = auth.uid()
+  )
+);
+
+-- rcv_import_batches: solo si la empresa pertenece al usuario
+drop policy if exists "rcv_batches_select_own" on public.rcv_import_batches;
+create policy "rcv_batches_select_own" on public.rcv_import_batches
+for select using (
+  exists (
+    select 1 from public.companies c
+    where c.id = rcv_import_batches.company_id and c.created_by = auth.uid()
+  )
+);
+
+drop policy if exists "rcv_batches_insert_own" on public.rcv_import_batches;
+create policy "rcv_batches_insert_own" on public.rcv_import_batches
+for insert with check (
+  created_by = auth.uid()
+  and exists (
+    select 1 from public.companies c
+    where c.id = company_id and c.created_by = auth.uid()
+  )
+);
+
+drop policy if exists "rcv_batches_delete_own" on public.rcv_import_batches;
+create policy "rcv_batches_delete_own" on public.rcv_import_batches
+for delete using (
+  exists (
+    select 1 from public.companies c
+    where c.id = rcv_import_batches.company_id and c.created_by = auth.uid()
+  )
+);
+
+-- rcv_rows: solo si la empresa pertenece al usuario
+drop policy if exists "rcv_rows_select_own" on public.rcv_rows;
+create policy "rcv_rows_select_own" on public.rcv_rows
+for select using (
+  exists (
+    select 1 from public.companies c
+    where c.id = rcv_rows.company_id and c.created_by = auth.uid()
+  )
+);
+
+drop policy if exists "rcv_rows_insert_own" on public.rcv_rows;
+create policy "rcv_rows_insert_own" on public.rcv_rows
+for insert with check (
+  created_by = auth.uid()
+  and exists (
+    select 1 from public.companies c
+    where c.id = company_id and c.created_by = auth.uid()
+  )
+);
+
+drop policy if exists "rcv_rows_delete_own" on public.rcv_rows;
+create policy "rcv_rows_delete_own" on public.rcv_rows
+for delete using (
+  exists (
+    select 1 from public.companies c
+    where c.id = rcv_rows.company_id and c.created_by = auth.uid()
   )
 );
 

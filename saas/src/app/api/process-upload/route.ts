@@ -3,6 +3,7 @@ import { extractInvoiceWithGemini } from '@/lib/gemini/extractDocument'
 import { CorruptedFileError, UnsupportedFileTypeError } from '@/lib/errors'
 import { parseRcvCsv } from '@/lib/rcv/parseRcvCsv'
 import { assertTipoDteSii, SiiValidationError } from '@/lib/sii/tipoDocumento'
+import { documentDedupKey } from '@/lib/documents/dedupKey'
 import { createClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 import { normalizePeriod } from '@/lib/period'
@@ -106,6 +107,53 @@ export async function POST(request: Request) {
         )
       }
 
+      // Persistimos el batch RCV y las filas para conciliación (si las tablas existen).
+      let rcvBatchId: string | null = null
+      try {
+        const { data: batch, error: batchErr } = await supabase
+          .from('rcv_import_batches')
+          .insert({
+            company_id: companyIdRaw,
+            period,
+            filename: name,
+            source_type: 'CSV',
+            warnings: parsed.warnings,
+            skipped_lines: parsed.skippedLines,
+            imported_rows: parsed.rows.length,
+            created_by: user.id,
+          })
+          .select('id')
+          .maybeSingle()
+        if (!batchErr && batch?.id) {
+          rcvBatchId = String(batch.id)
+          const rcvRows = parsed.rows.map((r) => ({
+            batch_id: rcvBatchId,
+            company_id: companyIdRaw,
+            period,
+            tipo_doc: r.tipo_doc,
+            rut_emisor: r.rut_emisor ?? null,
+            folio: r.folio ?? null,
+            monto_neto: r.monto_neto,
+            iva: r.iva,
+            total: r.total,
+            fecha: r.fecha ?? null,
+            dedup_key: documentDedupKey({
+              tipo_doc: r.tipo_doc,
+              rut_emisor: r.rut_emisor ?? null,
+              folio: r.folio ?? null,
+              total: r.total,
+              fecha: r.fecha ?? null,
+            }),
+            raw_json: r.metadata_json,
+            created_by: user.id,
+          }))
+          await supabase.from('rcv_rows').insert(rcvRows)
+        }
+      } catch {
+        // Si no existen tablas (migración 0006), no bloqueamos la carga de documentos.
+        rcvBatchId = null
+      }
+
       const rows = parsed.rows.map((r) => ({
         company_id: companyIdRaw,
         period,
@@ -118,7 +166,16 @@ export async function POST(request: Request) {
         fecha: r.fecha ?? null,
         source_type: 'CSV' as const,
         review_status: 'validated' as const,
-        metadata_json: r.metadata_json,
+        dedup_key: documentDedupKey({
+          tipo_doc: r.tipo_doc,
+          rut_emisor: r.rut_emisor ?? null,
+          folio: r.folio ?? null,
+          total: r.total,
+          fecha: r.fecha ?? null,
+        }),
+        metadata_json: rcvBatchId
+          ? { ...r.metadata_json, rcv_batch_id: rcvBatchId }
+          : r.metadata_json,
         created_by: user.id,
       }))
 
@@ -238,6 +295,13 @@ export async function POST(request: Request) {
       fecha: null as string | null,
       source_type: 'PDF' as const,
       review_status: 'pending' as const,
+      dedup_key: documentDedupKey({
+        tipo_doc: tipoDoc,
+        rut_emisor: extracted.rut_emisor ?? null,
+        folio: extracted.folio ?? null,
+        total,
+        fecha: null,
+      }),
       metadata_json: meta,
       created_by: user.id,
     }

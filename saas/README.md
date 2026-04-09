@@ -11,6 +11,12 @@ Multi‑tenancy: un usuario (contador) gestiona varias **empresas** (`companies`
 - Si la base ya existía sin columna `period` en `documents`, ejecuta `supabase/migrations/0002_documents_period.sql`
 - Para revisión humana (`review_status` / `review_note`), ejecuta `supabase/migrations/0003_documents_review.sql`
 - Para sumas y agregados del dashboard sin tope de 2000 filas (`document_period_summary` / `document_period_by_tipo_validated`), ejecuta `supabase/migrations/0004_document_period_aggregates.sql`
+- Para deduplicación y conciliación RCV/F29 oficial, ejecuta:
+  - `supabase/migrations/0006_rcv_imports.sql`
+  - `supabase/migrations/0007_documents_dedup.sql`
+  - `supabase/migrations/0008_f29_official_catalog.sql`
+  - `supabase/migrations/0009_f29_official_rpc.sql`
+  - `supabase/migrations/0010_rcv_reconciliation_rpc.sql`
 - **Vertex AI** (recomendado en GCP): `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION` (ej. `us-central1`); credencial por **ADC** (Cloud Run asigna service account; local: `gcloud auth application-default login`). Opcional: `VERTEX_GEMINI_MODEL`.
 - **Google AI Studio** (dev): `GEMINI_API_KEY` solo si no definís `GOOGLE_CLOUD_PROJECT`
 
@@ -30,6 +36,7 @@ npm run dev
 - `/login` — email + password (Supabase Auth)
 - `/companies` — alta y listado de empresas
 - `/[companyId]/dashboard` — período (YYYY-MM), carga CSV/PDF, totales del mes, eliminar filas
+- `/[companyId]/dashboard/f29-official` — vista F29 oficial (versionada) + drill‑down a documentos (solo validados)
 
 ## API
 

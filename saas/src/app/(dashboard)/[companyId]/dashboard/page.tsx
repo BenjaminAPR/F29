@@ -15,6 +15,7 @@ import { isSupabaseConfigured } from '@/lib/supabase/config'
 import { normalizePeriod } from '@/lib/period'
 import { coerceReviewStatus } from '@/lib/documents/reviewStatus'
 import { fetchDocumentPeriodAggregatesRpc } from '@/lib/dashboard/documentPeriodAggregateRpc'
+import { fetchRcvPeriodReconciliation } from '@/lib/dashboard/rcvReconciliationRpc'
 import {
   DOCUMENT_PAGE_SIZE,
   SUMMARY_FETCH_CAP,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/f29/summaries'
 import { prettyPrintNormalizedRut } from '@/lib/rut-chile'
 import { notFound, redirect } from 'next/navigation'
+import Link from 'next/link'
 
 type Props = {
   params: Promise<{ companyId: string }>
@@ -94,6 +96,8 @@ export default async function CompanyDashboardPage({ params, searchParams }: Pro
     pageRes,
     summaryRes,
     tiposRes,
+    f29OfficialRes,
+    rcvRecon,
   ] = await Promise.all([
     fetchDocumentPeriodAggregatesRpc(supabase, {
       companyId,
@@ -107,6 +111,14 @@ export default async function CompanyDashboardPage({ params, searchParams }: Pro
       .select('tipo_doc')
       .eq('company_id', companyId)
       .eq('period', period),
+    supabase.rpc('f29_official_period_lines', {
+      p_company_id: companyId,
+      p_period: period,
+      p_version_id: process.env.F29_OFFICIAL_VERSION ?? '2026-01-cl',
+      p_source_type: filters.sourceType ?? null,
+      p_search: filters.search ?? null,
+    }),
+    fetchRcvPeriodReconciliation(supabase, { companyId, period }),
   ])
 
   const {
@@ -116,6 +128,7 @@ export default async function CompanyDashboardPage({ params, searchParams }: Pro
   } = pageRes
   const { data: summaryDocs, error: summaryErr } = summaryRes
   const { data: tipoRows } = tiposRes
+  const { data: f29OfficialLines, error: f29OfficialErr } = f29OfficialRes
 
   const tiposEnPeriodo = [
     ...new Set(
@@ -133,6 +146,13 @@ export default async function CompanyDashboardPage({ params, searchParams }: Pro
   const aggregatesFromRpc = rpcAgg.ok
   const rpcAggregateHint =
     !aggregatesFromRpc && totalCount > 0 ? rpcAgg.error : null
+
+  const f29OfficialVersion = process.env.F29_OFFICIAL_VERSION ?? '2026-01-cl'
+  const f29OfficialHint =
+    f29OfficialErr?.message ??
+    (Array.isArray(f29OfficialLines) ? null : 'RPC f29_official_period_lines sin datos')
+
+  const rcvHint = rcvRecon.ok ? null : rcvRecon.error
 
   const csvRows = summaryList.map((d) => {
     const st = coerceReviewStatus(
@@ -316,6 +336,161 @@ export default async function CompanyDashboardPage({ params, searchParams }: Pro
         byBucket={byF29Bucket}
         byOfficialLine={byOfficialLine}
       />
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.04]">
+        <div className="border-b border-slate-100 px-4 py-3.5 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold tracking-tight text-slate-900">
+                F29 oficial (versionado)
+              </h2>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Agregado por línea oficial (seed) · versión{' '}
+                <span className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-800">
+                  {f29OfficialVersion}
+                </span>{' '}
+                · solo <strong>validados</strong>.
+              </p>
+            </div>
+            <Link
+              href={`/${companyId}/dashboard/f29-official?period=${encodeURIComponent(period)}&version=${encodeURIComponent(f29OfficialVersion)}`}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Ver detalle
+            </Link>
+          </div>
+          {f29OfficialHint ? (
+            <p className="mt-2 text-xs text-amber-900">
+              No se pudo cargar F29 oficial vía RPC: {f29OfficialHint}. Ejecutá
+              en Supabase{' '}
+              <code className="rounded bg-amber-100 px-1">
+                supabase/migrations/0008_f29_official_catalog.sql
+              </code>{' '}
+              y{' '}
+              <code className="rounded bg-amber-100 px-1">
+                supabase/migrations/0009_f29_official_rpc.sql
+              </code>
+              .
+            </p>
+          ) : null}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm text-slate-800">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Línea</th>
+                <th className="px-3 py-2 text-right">Docs</th>
+                <th className="px-3 py-2 text-right">Neto</th>
+                <th className="px-3 py-2 text-right">IVA</th>
+                <th className="px-3 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(f29OfficialLines as any[] | null | undefined)?.length ? (
+                (f29OfficialLines as any[]).map((r) => (
+                  <tr
+                    key={String(r.line_code)}
+                    className="border-b border-slate-50 last:border-0"
+                  >
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-900">
+                        {r.title}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-slate-500">
+                        {r.line_code}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {Number(r.doc_count ?? 0).toLocaleString('es-CL')}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {Number(r.sum_neto ?? 0).toLocaleString('es-CL')}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {Number(r.sum_iva ?? 0).toLocaleString('es-CL')}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {Number(r.sum_total ?? 0).toLocaleString('es-CL')}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-8 text-center text-sm text-slate-500"
+                  >
+                    {f29OfficialHint
+                      ? 'RPC no disponible.'
+                      : 'Sin líneas para mostrar (¿sin documentos validados o sin mapeo?).'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.04]">
+        <div className="border-b border-slate-100 px-4 py-3.5 sm:px-5">
+          <h2 className="text-sm font-semibold tracking-tight text-slate-900">
+            Conciliación RCV (beta)
+          </h2>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Compara `rcv_rows` (importaciones RCV) vs documentos CSV cargados (no
+            excluidos). Si aún no guardas RCV, verás 0 filas.
+          </p>
+          {rcvHint ? (
+            <p className="mt-2 text-xs text-amber-900">
+              No se pudo cargar conciliación: {rcvHint}. Ejecutá en Supabase{' '}
+              <code className="rounded bg-amber-100 px-1">
+                supabase/migrations/0006_rcv_imports.sql
+              </code>{' '}
+              y{' '}
+              <code className="rounded bg-amber-100 px-1">
+                supabase/migrations/0010_rcv_reconciliation_rpc.sql
+              </code>
+              .
+            </p>
+          ) : null}
+        </div>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="text-[11px] text-slate-600">Filas RCV</div>
+            <div className="mt-1 font-mono text-lg text-slate-900">
+              {rcvRecon.ok ? rcvRecon.data.rcv_rows_count.toLocaleString('es-CL') : '—'}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-600">
+              Neto {rcvRecon.ok ? rcvRecon.data.rcv_sum_neto.toLocaleString('es-CL') : '—'} · IVA{' '}
+              {rcvRecon.ok ? rcvRecon.data.rcv_sum_iva.toLocaleString('es-CL') : '—'} · Total{' '}
+              {rcvRecon.ok ? rcvRecon.data.rcv_sum_total.toLocaleString('es-CL') : '—'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="text-[11px] text-slate-600">Docs CSV (no excluidos)</div>
+            <div className="mt-1 font-mono text-lg text-slate-900">
+              {rcvRecon.ok ? rcvRecon.data.docs_csv_count.toLocaleString('es-CL') : '—'}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-600">
+              Neto {rcvRecon.ok ? rcvRecon.data.docs_csv_sum_neto.toLocaleString('es-CL') : '—'} · IVA{' '}
+              {rcvRecon.ok ? rcvRecon.data.docs_csv_sum_iva.toLocaleString('es-CL') : '—'} · Total{' '}
+              {rcvRecon.ok ? rcvRecon.data.docs_csv_sum_total.toLocaleString('es-CL') : '—'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-[11px] text-slate-600">Faltan en docs (por dedup_key)</div>
+            <div className="mt-1 font-mono text-lg text-slate-900">
+              {rcvRecon.ok ? rcvRecon.data.missing_in_docs.toLocaleString('es-CL') : '—'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-[11px] text-slate-600">Sobran en docs (por dedup_key)</div>
+            <div className="mt-1 font-mono text-lg text-slate-900">
+              {rcvRecon.ok ? rcvRecon.data.extra_in_docs.toLocaleString('es-CL') : '—'}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {summaryCapHit ? (
         <p

@@ -39,7 +39,7 @@ Documento vivo: prioridades y entregas hacia **facilitar al usuario con IA**, un
 ## Fase B — Calidad RCV + documentos sueltos
 
 - [ ] Endurecer parser CSV frente a RCV reales (variantes de columnas).
-- [ ] **Deduplicación** (mismo tipo + RUT + folio ± empresa/período).
+- [x] **Deduplicación** (clave determinística `dedup_key` + índices; sugerencias futuras) (`0007_documents_dedup.sql`).
 - [x] Estados de documento: `pending` / `validated` / `excluded` + `review_note` (migración + UI en dashboard).
 - [ ] Notas de crédito/débito: reglas explícitas de cómo afectan neto/IVA/total.
 
@@ -55,8 +55,9 @@ Documento vivo: prioridades y entregas hacia **facilitar al usuario con IA**, un
 - [x] Mapa **versionado** DTE → buckets orientativos (`F29_BUCKET_MAP_VERSION` en `lib/f29/mapVersion.ts`); no son líneas oficiales aún.
 - [x] Panel **F29 (beta)** en dashboard + totales por tipo DTE (solo validados).
 - [x] Catálogo interno **lineRefId** + mapeo bucket DTE → referencia (`lib/f29/officialLines.ts`).
-- [ ] Tabla **código de casilla oficial SII** (p. ej. según PDF instructivo) → agregación versionada por fecha.
-- [ ] Pantalla **Vista F29** con enlace al detalle de documentos por línea oficial.
+- [x] Catálogo **F29 oficial** versionado (seed) + mapeo `tipo_doc` → línea (`0008`).
+- [x] RPC **F29 oficial** por línea + drill‑down (`0009`) y pantalla `/dashboard/f29-official`.
+- [ ] Tabla **código de casilla oficial SII** alineada al instructivo real (número de casilla por vigencia) → reemplazar seed.
 - [ ] Alertas de cuadre: saltos vs. mes anterior, IVA inconsistente con tipo DTE, etc.
 - [x] Export Excel: hojas **Por tipo DTE** y **F29 beta** (además de Resumen / Documentos).
 - [ ] Checklist declaración / plantilla alineada a pasos en sii.cl.
@@ -110,3 +111,5 @@ Documento vivo: prioridades y entregas hacia **facilitar al usuario con IA**, un
 | 2026-04 | `lib/dashboard/periodDocumentFilters.ts`: filtros GET, paginación 25, resúmenes hasta 2000 filas filtradas; POST conserva filtros vía `ret_*`. |
 | 2026-04 | `lib/f29/officialLines.ts` + `officialReferenceVersion.ts`: líneas de referencia F29, UI y Excel. |
 | 2026-04 | Migración `0004` + RPC en Postgres: totales y agregados por tipo sin tope 2000; dashboard con fallback a muestra si falta la migración. |
+| 2026-04 | `0006` (RCV batches/rows) + `0010` (RPC conciliación) + panel “Conciliación RCV (beta)” en dashboard. |
+| 2026-04 | `0007` dedup_key en `documents` + `0008`/`0009` F29 oficial (seed) + vista `/dashboard/f29-official`. |
